@@ -191,12 +191,21 @@ class IOEngine(object):
                                         intraday_tz=intraday_tz,
                                         excel_sheet=excel_sheet)
 
+    def _is_redis_running(self, r):
+        try:
+            r.ping()
+
+            return True
+        except Exception as e:
+            print(str(e))
+            return False
+
     def remove_time_series_cache_on_disk(self,
                                          fname: str,
                                          engine: str = "hdf5_fixed",
                                          db_server: str = constants.db_server,
                                          db_port: int = constants.db_port,
-                                         timeout: int = 10,
+                                         timeout: int = 2,
                                          username: int = None,
                                          password: int = None):
 
@@ -214,11 +223,13 @@ class IOEngine(object):
                                       socket_timeout=timeout,
                                       socket_connect_timeout=timeout)
 
+                if not self._is_redis_running(r): return
+
                 if fname == "flush_all_keys":
                     r.flushall()
                 else:
                     # Allow deletion of keys by pattern matching
-                    matching_keys = r.keys("*" + fname)
+                    matching_keys = r.keys(f"*{fname}")
 
                     if matching_keys:
                         # Use pipeline to speed up command
@@ -320,6 +331,7 @@ class IOEngine(object):
             self,
             fname: str = None,
             data_frame: pd.DataFrame = None,
+            meta_data: dict = None,
             engine: str = "hdf5_fixed",
             append_data: bool = False,
             db_server: str = constants.db_server,
@@ -327,8 +339,9 @@ class IOEngine(object):
             username: str = constants.db_username,
             password: str = constants.db_password,
             filter_out_matching: str = None,
-            timeout: int = 10,
+            timeout: int = constants.db_timeout,
             use_cache_compression: bool = constants.use_cache_compression,
+            cache_compression: str = constants.cache_compression,
             parquet_compression: str = constants.parquet_compression,
             use_pyarrow_directly: bool = False,
             md_request=None,
@@ -392,43 +405,45 @@ class IOEngine(object):
                                       socket_timeout=timeout,
                                       socket_connect_timeout=timeout)
 
-                ping = r.ping()
+                if not self._is_redis_running(r): return
 
                 # If Redis is alive, try pushing to it
-                if ping:
-                    if data_frame is not None:
-                        if isinstance(data_frame, pd.DataFrame):
-                            mem = data_frame.memory_usage(deep="deep").sum()
-                            mem_float = round(float(mem) / (1024.0 * 1024.0),
-                                              3)
+                if data_frame is not None:
+                    if isinstance(data_frame, pd.DataFrame):
+                        mem = data_frame.memory_usage(deep="deep").sum()
+                        mem_float = round(float(mem) / (1024.0 * 1024.0),
+                                          3)
 
-                            if mem_float < 500:
+                        if mem_float < 500:
 
 
-                                if use_cache_compression:
-                                    ser = io.BytesIO()
-                                    data_frame.to_parquet(ser,
-                                                         compression="gzip")
-                                    ser.seek(0)
+                            if use_cache_compression:
+                                ser = io.BytesIO()
+                                data_frame.to_parquet(ser,
+                                                     compression=cache_compression)
+                                ser.seek(0)
 
-                                    r.set("comp_" + fname, ser.read())
-                                else:
-                                    ser = io.BytesIO()
-                                    data_frame.to_parquet(ser)
-                                    ser.seek(0)
-
-                                    r.set(fname, ser.read())
-
-                                logger.info("Pushed " + fname + " to Redis")
+                                r.set(f"comp_{fname}", ser.read())
                             else:
-                                logger.warn(
-                                    "Did not push " + fname + " to Redis, given size")
-                    else:
-                        logger.info(
-                            f"Object {fname} is empty, not pushed to Redis.")
+                                ser = io.BytesIO()
+                                data_frame.to_parquet(ser)
+                                ser.seek(0)
+
+                                r.set(fname, ser.read())
+
+                            if meta_data is not None:
+                                r.set(f"meta_{fname}", json.dumps(meta_data))
+
+                            logger.info(f"Pushed {fname} to Redis")
+                        else:
+                            logger.warn(
+                                f"Did not push {fname} to Redis, given size")
                 else:
-                    logger.warning(
-                        f"Did not push {fname} to Redis given not running")
+                    logger.info(
+                        f"Object {fname} is empty, not pushed to Redis.")
+                # else:
+                #     logger.warning(
+                #         f"Did not push {fname} to Redis given not running")
 
             except Exception as e:
                 fname_msg = fname
@@ -509,12 +524,11 @@ class IOEngine(object):
 
             if username is not None and password is not None:
                 c = pymongo.MongoClient(
-                    host="mongodb://" + username + ":" + password + "@" + str(
-                        db_server) + ":" + str(db_port),
+                    host=f"mongodb://{username}:{password}@{str(db_server)}:{str(db_port)}",
                     connect=False)  # , username=username, password=password)
             else:
                 c = pymongo.MongoClient(
-                    host="mongodb://" + str(db_server) + ":" + str(db_port),
+                    host=f"mongodb://{str(db_server)}:{str(db_port)}",
                     connect=False)
 
             store = Arctic(c, socketTimeoutMS=socketTimeoutMS,
@@ -530,7 +544,7 @@ class IOEngine(object):
 
             if database is None:
                 store.initialize_library(fname, audit=False)
-                logger.info("Created MongoDB library: " + fname)
+                logger.info(f"Created MongoDB library: {fname}")
             else:
                 logger.info(f"Got MongoDB library: {fname}")
 
@@ -621,12 +635,12 @@ class IOEngine(object):
                 # once written to disk rename
                 os.rename(h5_filename_temp, h5_filename)
 
-            logger.info("Written HDF5: " + fname)
+            logger.info(f"Written HDF5: {fname}")
 
         elif engine == "parquet":
             if ".parquet" not in fname:
                 if fname[-5:] != ".gzip":
-                    fname = fname + ".parquet"
+                    fname = f"{fname}.parquet"
 
             self.to_parquet(data_frame, fname,
                             cloud_credentials=cloud_credentials,
@@ -637,7 +651,7 @@ class IOEngine(object):
             logger.info(f"Written Parquet: {fname}")
         elif engine == "csv":
             if ".csv" not in fname:
-                fname = fname + ".csv"
+                fname = f"{fname}.csv"
 
             data_frame.to_csv(fname)
 
@@ -658,7 +672,7 @@ class IOEngine(object):
         if fname[-3:] == ".h5":
             return fname
 
-        return fname + ".h5"
+        return f"{fname}.h5"
 
     def get_bcolz_filename(self, fname: str):
         """Strips bcolz off filename returning first portion of filename
@@ -675,7 +689,7 @@ class IOEngine(object):
         if fname[-6:] == ".bcolz":
             return fname
 
-        return fname + ".bcolz"
+        return f"{fname}.bcolz"
 
     def write_r_compatible_hdf_dataframe(self,
                                          data_frame: pd.DataFrame,
@@ -729,6 +743,7 @@ class IOEngine(object):
                                          columns: List[str] = None,
                                          db_server: str = constants.db_server,
                                          db_port: int = constants.db_port,
+                                         timeout: int = constants.db_timeout,
                                          username: str = constants.db_username,
                                          password: str = constants.db_password,
                                          arcticdb_dict: dict = None,
@@ -780,10 +795,12 @@ class IOEngine(object):
                 msg = None
 
                 try:
-                    r = redis.StrictRedis(host=db_server, port=db_port, db=0)
+                    r = redis.StrictRedis(host=db_server, port=db_port, db=0,
+                                          socket_timeout=timeout,
+                                          socket_connect_timeout=timeout)
 
                     # is there a compressed key stored?)
-                    k = r.keys("comp_" + fname_single)
+                    k = r.keys(f"comp_{fname_single}")
 
                     # If so, then it means that we have stored it as a
                     # compressed object if have more than 1 element, take the
@@ -920,6 +937,142 @@ class IOEngine(object):
 
         return data_frame_list
 
+    def read_time_series_meta_data_from_disk(self, fname: str,
+                                             engine: str = "redis",
+                                             db_server: str = constants.db_server,
+                                             db_port: int = constants.db_port,
+                                             timeout: int = constants.db_timeout):
+        """Retrieves metadata dictionary from Redis cache
+
+        Parameters
+        ----------
+        fname : str (or list)
+            file key to retrieve metadata for
+        engine : str (optional)
+            "redis" - reads from Redis (only supported engine)
+        db_server : str
+            IP address of Redis server (default "127.0.0.1")
+        db_port : int
+            Port of Redis server (default 6379)
+        timeout : int
+            Connection timeout in seconds (default 10)
+
+        Returns
+        -------
+        dict or list of dict
+            Metadata dictionary or list of metadata dictionaries
+        """
+
+        logger = LoggerManager.getLogger(__name__)
+
+        if engine != "redis":
+            logger.warning(f"Engine '{engine}' not supported for metadata retrieval. Only 'redis' is supported.")
+            return None
+
+        meta_data_list = []
+
+        if not (isinstance(fname, list)):
+            fname = [fname]
+
+        for fname_single in fname:
+            logger.debug(f"Reading metadata for {fname_single}..")
+
+            fname_single = os.path.basename(fname_single).replace(".", "_")
+
+            meta_data = None
+
+            try:
+                r = redis.StrictRedis(host=db_server, port=db_port, db=0,
+                                     socket_timeout=timeout,
+                                     socket_connect_timeout=timeout)
+
+                # Try to get the metadata key
+                meta_key = f"meta_{fname_single}"
+                meta_bytes = r.get(meta_key)
+
+                if meta_bytes is not None:
+                    meta_data = json.loads(meta_bytes.decode("utf-8"))
+                    logger.info(f"Loaded metadata from Redis: {fname_single}")
+                else:
+                    logger.info(f"No metadata found for {fname_single} in Redis")
+
+            except Exception as e:
+                logger.warning(
+                    f"Could not retrieve metadata for {fname_single} from Redis: {str(e)}")
+
+            meta_data_list.append(meta_data)
+
+        if len(meta_data_list) == 0:
+            return None
+
+        if len(meta_data_list) == 1:
+            return meta_data_list[0]
+
+        return meta_data_list
+
+    def exists_time_series_cache_on_disk(self, fname: str,
+                                         engine: str = "redis",
+                                         db_server: str = constants.db_server,
+                                         db_port: int = constants.db_port,
+                                         timeout: int = 10) -> bool:
+        """Checks if a time series cache key exists in Redis
+
+        Parameters
+        ----------
+        fname : str
+            file key to check existence for
+        engine : str (optional)
+            "redis" - checks in Redis (only supported engine)
+        db_server : str
+            IP address of Redis server (default "127.0.0.1")
+        db_port : int
+            Port of Redis server (default 6379)
+        timeout : int
+            Connection timeout in seconds (default 10)
+
+        Returns
+        -------
+        bool
+            True if key exists, False otherwise
+        """
+
+        logger = LoggerManager.getLogger(__name__)
+
+        if engine != "redis":
+            logger.warning(f"Engine '{engine}' not supported for existence check. Only 'redis' is supported.")
+            return False
+
+        fname_single = os.path.basename(fname).replace(".", "_")
+
+        try:
+            r = redis.StrictRedis(host=db_server, port=db_port, db=0,
+                                 socket_timeout=timeout,
+                                 socket_connect_timeout=timeout)
+
+            if not self._is_redis_running(r):
+                return False
+
+            # Check for both compressed and uncompressed keys
+            comp_key = f"comp_{fname_single}"
+
+            # First check if compressed key exists
+            if r.exists(comp_key):
+                logger.debug(f"Found compressed key for {fname_single} in Redis")
+                return True
+
+            # Then check if regular key exists
+            if r.exists(fname_single):
+                logger.debug(f"Found key for {fname_single} in Redis")
+                return True
+
+            logger.debug(f"Key {fname_single} does not exist in Redis")
+            return False
+
+        except Exception as e:
+            logger.warning(
+                f"Could not check existence for {fname_single} in Redis: {str(e)}")
+            return False
+
     ### functions for CSV reading and writing
     def write_time_series_to_csv(self, csv_path, data_frame):
         data_frame.to_csv(csv_path)
@@ -982,7 +1135,7 @@ class IOEngine(object):
 
             # add ".close" to each column name
             for col in old_cols:
-                new_cols.append(col + postfix)
+                new_cols.append(f"{col}{postfix}")
 
             data_frame.columns = new_cols
         else:
@@ -1117,7 +1270,7 @@ class IOEngine(object):
             path = path.replace("s3://", "")
             path = path.replace("//", "/")
 
-            return "s3://" + path
+            return f"s3://{path}"
 
         return path
 
@@ -1686,6 +1839,206 @@ class IOEngine(object):
         else:
             return os.path.exists(path)
 
+    def get_file_properties(self,
+                           path: str,
+                           cloud_credentials: dict = None) -> dict:
+        """Get file properties including modified datetime and filesize
+
+        Works for both local files and S3 objects.
+        All timestamps are returned in GMT/UTC timezone.
+
+        Parameters
+        ----------
+        path : str
+            Path to the file (local or S3)
+        cloud_credentials : dict (optional)
+            Credentials for accessing S3
+
+        Returns
+        -------
+        dict
+            Dictionary with keys:
+            - 'modified_datetime': datetime object of last modification (in GMT/UTC)
+            - 'filesize_bytes': size of file in bytes
+            - 'path': the file path
+            Returns None if file doesn't exist or error occurs
+        """
+
+        logger = LoggerManager.getLogger(__name__)
+
+        cloud_credentials = self._convert_cred(cloud_credentials)
+
+        try:
+            if "s3://" in path:
+                s3 = self._create_cloud_filesystem(cloud_credentials,
+                                                   "s3_filesystem")
+
+                path_in_s3 = path.replace("s3://", "")
+
+                if not s3.exists(path_in_s3):
+                    logger.warning(f"S3 path does not exist: {path}")
+                    return None
+
+                # Get file info from S3
+                file_info = s3.info(path_in_s3)
+
+                # Extract modified time and size
+                # S3FileSystem returns 'LastModified' or 'last_modified' depending on version
+                modified_dt = file_info.get('LastModified') or file_info.get('last_modified')
+                filesize = file_info.get('Size') or file_info.get('size')
+
+                # Ensure S3 timestamp is timezone-aware UTC
+                # S3 timestamps should already be in UTC, but make sure they're timezone-aware
+                import datetime as dt
+                if modified_dt and not modified_dt.tzinfo:
+                    # If naive, assume it's UTC and make it aware
+                    modified_dt = modified_dt.replace(tzinfo=dt.timezone.utc)
+                elif modified_dt and modified_dt.tzinfo != dt.timezone.utc:
+                    # If it has a different timezone, convert to UTC
+                    modified_dt = modified_dt.astimezone(dt.timezone.utc)
+
+                return {
+                    'modified_datetime': modified_dt,
+                    'filesize_bytes': filesize,
+                    'path': path
+                }
+            else:
+                if not os.path.exists(path):
+                    logger.warning(f"Local path does not exist: {path}")
+                    return None
+
+                # Get file stats from local filesystem
+                stat_info = os.stat(path)
+
+                # Convert modification time to datetime in UTC
+                # fromtimestamp uses local timezone by default, so we use utcfromtimestamp
+                import datetime as dt
+                modified_dt = dt.datetime.utcfromtimestamp(stat_info.st_mtime)
+                # Make it timezone-aware as UTC
+                modified_dt = modified_dt.replace(tzinfo=dt.timezone.utc)
+
+                return {
+                    'modified_datetime': modified_dt,
+                    'filesize_bytes': stat_info.st_size,
+                    'path': path
+                }
+
+        except Exception as e:
+            logger.warning(f"Error getting file properties for {path}: {str(e)}")
+            return None
+
+    def is_same_file(self,
+                     path_1: str = None,
+                     file_meta_data_1: dict = None,
+                     path_2: str = None,
+                     file_meta_data_2: dict = None,
+                     cloud_credentials: dict = None) -> bool:
+        """Compare two files to determine if they are the same
+
+        Can compare based on paths and/or file metadata (modified datetime and filesize).
+        If paths are provided without metadata, the function will fetch metadata automatically.
+
+        Parameters
+        ----------
+        path_1 : str (optional)
+            Path to first file (local or S3)
+        file_meta_data_1 : dict (optional)
+            Metadata dict for first file with keys: 'modified_datetime', 'filesize_bytes', 'path'
+        path_2 : str (optional)
+            Path to second file (local or S3)
+        file_meta_data_2 : dict (optional)
+            Metadata dict for second file with keys: 'modified_datetime', 'filesize_bytes', 'path'
+        cloud_credentials : dict (optional)
+            Credentials for accessing S3
+
+        Returns
+        -------
+        bool
+            True if files are the same, False otherwise or if comparison cannot be made
+
+        Notes
+        -----
+        Files are considered the same if:
+        - They have the same path (after normalization), OR
+        - They have the same filesize AND modified datetime
+
+        At least one of (path_1 or file_meta_data_1) and (path_2 or file_meta_data_2) must be provided.
+        """
+
+        logger = LoggerManager.getLogger(__name__)
+
+        # Validate inputs
+        if (path_1 is None and file_meta_data_1 is None):
+            logger.warning("Either path_1 or file_meta_data_1 must be provided")
+            return False
+
+        if (path_2 is None and file_meta_data_2 is None):
+            logger.warning("Either path_2 or file_meta_data_2 must be provided")
+            return False
+
+        # Get metadata if not provided
+        if file_meta_data_1 is None and path_1 is not None:
+            file_meta_data_1 = self.get_file_properties(path_1, cloud_credentials)
+            if file_meta_data_1 is None:
+                logger.warning(f"Could not get metadata for path_1: {path_1}")
+                return False
+
+        if file_meta_data_2 is None and path_2 is not None:
+            file_meta_data_2 = self.get_file_properties(path_2, cloud_credentials)
+            if file_meta_data_2 is None:
+                logger.warning(f"Could not get metadata for path_2: {path_2}")
+                return False
+
+        # Extract paths from metadata if available
+        meta_path_1 = file_meta_data_1.get('path') if file_meta_data_1 else None
+        meta_path_2 = file_meta_data_2.get('path') if file_meta_data_2 else None
+
+        # Use provided paths or fall back to paths from metadata
+        compare_path_1 = path_1 if path_1 is not None else meta_path_1
+        compare_path_2 = path_2 if path_2 is not None else meta_path_2
+
+        # Compare by path if both are available
+        if compare_path_1 and compare_path_2:
+            # Normalize paths for comparison
+            norm_path_1 = self.sanitize_path(compare_path_1)
+            norm_path_2 = self.sanitize_path(compare_path_2)
+
+            if norm_path_1 == norm_path_2:
+                logger.debug(f"Files are the same (same path): {norm_path_1}")
+                return True
+
+        # Compare by metadata if both are available
+        if file_meta_data_1 and file_meta_data_2:
+            size_1 = file_meta_data_1.get('filesize_bytes')
+            size_2 = file_meta_data_2.get('filesize_bytes')
+
+            modified_1 = file_meta_data_1.get('modified_datetime')
+            modified_2 = file_meta_data_2.get('modified_datetime')
+
+            # Check if we have both size and modified datetime for comparison
+            if size_1 is not None and size_2 is not None:
+                if size_1 != size_2:
+                    logger.debug(f"Files are different (different sizes): {size_1} vs {size_2}")
+                    return False
+
+                # Sizes are the same, now check modified datetime if available
+                if modified_1 is not None and modified_2 is not None:
+                    # Compare timestamps (they should already be in UTC from get_file_properties)
+                    if modified_1 == modified_2:
+                        logger.debug(f"Files are the same (same size and modified time)")
+                        return True
+                    else:
+                        logger.debug(f"Files are different (same size but different modified times)")
+                        return False
+                else:
+                    # Only size comparison available, and sizes are the same
+                    logger.debug(f"Files might be the same (same size but no timestamp comparison)")
+                    return True
+
+        # Insufficient information to determine if files are the same
+        logger.debug("Insufficient information to determine if files are the same")
+        return False
+
     def path_join(self, folder: str, *file):
 
         file = list(file)
@@ -1702,7 +2055,7 @@ class IOEngine(object):
             folder = folder.replace("\\\\", "/")
             folder = folder.replace("\\", "/")
 
-            folder = "s3://" + folder
+            folder = f"s3://{folder}"
 
         else:
             folder = os.path.join(folder, *file)
@@ -1728,7 +2081,7 @@ class IOEngine(object):
             if path_in_s3 in list_files:
                 list_files.remove(path_in_s3)
 
-            files = ["s3://" + x for x in list_files]
+            files = [f"s3://{x}" for x in list_files]
 
         else:
             files = glob.glob(path)
@@ -1829,6 +2182,7 @@ class SpeedCache(object):
 
     def __init__(self, db_cache_server: str = None,
                  db_cache_port: int = None,
+                 db_cache_timeout: int = None,
                  engine: str = "redis"):
 
         if db_cache_server is None:
@@ -1837,24 +2191,49 @@ class SpeedCache(object):
         if db_cache_port is None:
             self.db_cache_port = constants.db_cache_port
 
+        if db_cache_timeout is None:
+            self.db_cache_timeout = constants.db_cache_timeout
+
         self.engine = engine
         self.io_engine = IOEngine()
 
-    def put_dataframe(self, key: str, obj):
+    def put_dataframe(self, key: str, obj, meta_data: dict = None):
         if self.engine != "no_cache":
             try:
                 self.io_engine.write_time_series_cache_to_disk(
-                    key.replace("/", "_"), obj,
+                    key.replace("/", "_"), obj, meta_data=meta_data,
                     engine=self.engine, db_server=self.db_cache_server,
                     db_port=self.db_cache_port)
             except:
-                pass
+               pass
+
+    def exists_key(self, key: str):
+        if self.engine == "no_cache": return False
+
+        try:
+            return self.io_engine.exists_time_series_cache_on_disk(
+                key.replace("/", "_"),
+                engine=self.engine, db_server=self.db_cache_server,
+                db_port=self.db_cache_port)
+        except:
+            pass
 
     def get_dataframe(self, key: str):
         if self.engine == "no_cache": return None
 
         try:
             return self.io_engine.read_time_series_cache_from_disk(
+                key.replace("/", "_"),
+                engine=self.engine, db_server=self.db_cache_server,
+                db_port=self.db_cache_port)
+        except:
+            pass
+
+    def get_meta_data(self, key: str):
+        if self.engine == "no_cache": return None
+
+        try:
+            return self.io_engine.read_time_series_meta_data_from_disk(
                 key.replace("/", "_"),
                 engine=self.engine, db_server=self.db_cache_server,
                 db_port=self.db_cache_port)
@@ -1915,7 +2294,7 @@ class SpeedCache(object):
         key = "_".join(str(e) for e in key).replace(type(obj).__name__,
                                                     "").replace("___", "_")
 
-        return type(obj).__name__ + "_" + str(len(str(key))) + "_" + str(key)
+        return f"{type(obj).__name__}_{str(len(str(key)))}_{str(key)}"
 
 
 # TODO refactor code to use DBEngine

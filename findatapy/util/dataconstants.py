@@ -82,6 +82,8 @@ class DataConstants(object):
     db_username = None
     db_password = None
 
+    db_timeout = 5 # seconds for database connection timeout
+
     ###### FOR ArcticDB
     arcticdb_dict = {
         "prune_previous_versions": False,
@@ -94,11 +96,24 @@ class DataConstants(object):
     ###### FOR TEMPORARY IN-MEMORY CACHE (Redis)
     db_cache_server = "127.0.0.1"
     db_cache_port = "6379"
+    db_cache_timeout = 0.5 # seconds for Redis connection timeout
+
     write_cache_engine = "redis"  # 'redis' or 'no_cache' means we don't use cache
 
     use_cache_compression = True
 
-    parquet_compression = "gzip" # 'gzip' or 'snappy'
+    # Cache MarketDataRequest to Redis
+    push_to_cache = True
+
+    # Cache Parquet reads from MarketDataRequest to Redis
+    cache_flat_files = False
+
+    cache_compression = "zstd"
+    parquet_compression = "zstd" # 'gzip' or 'snappy'
+
+    # Ignore very large flat file files for caching (eg. tick data), as can cause issues
+    # with Redis when trying to cache large files, so set a maximum file size for caching (in bytes)
+    cache_max_file_size_bytes = 100 * 1024 * 1024 # 100 MB
 
     # Note for AWS you can set these globally without having to specify here with AWS CLI
     cloud_credentials = {"aws_anon" : False}

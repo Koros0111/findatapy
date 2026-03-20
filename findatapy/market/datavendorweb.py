@@ -53,14 +53,13 @@ except:
     # if import fails use Quandl 2.x.x
     import Quandl
 
-from findatapy.market import IOEngine
+from findatapy.market.ioengine import IOEngine, SpeedCache
 
 # Abstract class on which this is based
 from findatapy.market.datavendor import DataVendor
 
 # For logging and constants
 from findatapy.util import ConfigManager, DataConstants, LoggerManager
-
 
 class DataVendorQuandl(DataVendor):
     """Reads in data from Quandl into findatapy library
@@ -130,15 +129,15 @@ class DataVendorQuandl(DataVendor):
 
             for i in range(0, len(tickers)):
                 try:
-                    ticker_combined.append(tickers[i] + "." + fields[i])
+                    ticker_combined.append(f"{tickers[i]}.{fields[i]}")
                 except:
-                    ticker_combined.append(tickers[i] + ".close")
+                    ticker_combined.append(f"{tickers[i]}.close")
 
             data_frame.columns = ticker_combined
             data_frame.index.name = 'Date'
 
         logger.info(
-            "Completed request from Quandl for " + str(ticker_combined))
+            f"Completed request from Quandl for {ticker_combined}")
 
         return data_frame
 
@@ -165,10 +164,7 @@ class DataVendorQuandl(DataVendor):
             except Exception as e:
                 trials = trials + 1
                 logger.info(
-                    "Attempting... " + str(
-                        trials) + " request to download from Quandl due to "
-                                  "following error: " + str(
-                        e))
+                    f"Attempting... {trials} request to download from Quandl due to following error: {e}")
 
         if trials == 5:
             logger.error(
@@ -242,14 +238,14 @@ class DataVendorEikon(DataVendor):
 
             for i in range(0, len(tickers)):
                 try:
-                    ticker_combined.append(tickers[i] + "." + fields[i])
+                    ticker_combined.append(f"{tickers[i]}.{fields[i]}")
                 except:
-                    ticker_combined.append(tickers[i] + ".close")
+                    ticker_combined.append(f"{tickers[i]}.close")
 
             data_frame.columns = ticker_combined
             data_frame.index.name = 'Date'
 
-        logger.info("Completed request from Eikon for " + str(ticker_combined))
+        logger.info(f"Completed request from Eikon for {ticker_combined}")
 
         # print(data_frame)
         return data_frame
@@ -291,10 +287,7 @@ class DataVendorEikon(DataVendor):
             except Exception as e:
                 trials = trials + 1
                 logger.info(
-                    "Attempting... " + str(
-                        trials) + " request to download from Eikon due to "
-                                  "following error: " + str(
-                        e))
+                    f"Attempting... {trials} request to download from Eikon due to following error: {e}")
 
         if trials == 5:
             logger.error(
@@ -346,7 +339,7 @@ class DataVendorONS(DataVendor):
             ticker_combined = []
 
             for i in range(0, len(fields)):
-                ticker_combined.append(tickers[i] + "." + fields[i])
+                ticker_combined.append(f"{tickers[i]}.{fields[i]}")
 
             data_frame.columns = ticker_combined
             data_frame.index.name = 'Date'
@@ -368,8 +361,7 @@ class DataVendorONS(DataVendor):
                 break
             except:
                 trials = trials + 1
-                logger.info("Attempting... " + str(
-                    trials) + " request to download from ONS")
+                logger.info(f"Attempting... {trials} request to download from ONS")
 
         if trials == 5:
             logger.error("Couldn't download from ONS after several attempts!")
@@ -437,8 +429,7 @@ class DataVendorBOE(DataVendor):
                 break
             except:
                 trials = trials + 1
-                logger.info("Attempting... " + str(
-                    trials) + " request to download from BOE")
+                logger.info(f"Attempting... {trials} request to download from BOE")
 
         if trials == 5:
             logger.error("Couldn't download from BoE after several attempts!")
@@ -512,7 +503,7 @@ class DataVendorYahoo(DataVendor):
             ticker_combined = []
 
             for i in range(0, len(fields)):
-                ticker_combined.append(tickers[i] + "." + fields[i])
+                ticker_combined.append(f"{tickers[i]}.{fields[i]}")
 
             data_frame.columns = ticker_combined
             data_frame.index.name = 'Date'
@@ -553,15 +544,14 @@ class DataVendorYahoo(DataVendor):
                 print(str(e))
                 trials = trials + 1
                 time.sleep(1)
-                logger.info("Attempting... " + str(
-                    trials) + " request to download from Yahoo")
+                logger.info(f"Attempting... {trials} request to download from Yahoo")
 
         if trials == 5:
             logger.error("Couldn't download from Yahoo after several attempts!")
 
         if data_frame is not None:
             if len(data_frame.columns) == 1:
-                data_frame.columns = [md_request.tickers[0] + "." + x for
+                data_frame.columns = [f"{md_request.tickers[0]}.{x}" for
                                       x in data_frame.columns]
             else:
                 fields = data_frame.columns.levels[0]
@@ -571,7 +561,7 @@ class DataVendorYahoo(DataVendor):
 
                 for fi in fields:
                     for ti in tickers:
-                        new_cols.append(ti + "." + fi)
+                        new_cols.append(f"{ti}.{fi}")
 
                 data_frame.columns = new_cols
 
@@ -648,13 +638,13 @@ class DataVendorPandasWeb(DataVendor):
             ticker_combined = []
 
             for i in range(0, len(fields)):
-                ticker_combined.append(tickers[i] + "." + fields[i])
+                ticker_combined.append(f"{tickers[i]}.{fields[i]}")
 
             ticker_requested = []
 
             for f in md_request.fields:
                 for t in md_request.tickers:
-                    ticker_requested.append(t + "." + f)
+                    ticker_requested.append(f"{t}.{f}")
 
             data_frame.columns = ticker_combined
             data_frame.index.name = 'Date'
@@ -781,7 +771,7 @@ class DataVendorDukasCopy(DataVendor):
             ticker_combined = []
 
             for i in range(0, len(fields)):
-                ticker_combined.append(tickers[i] + "." + fields[i])
+                ticker_combined.append(f"{tickers[i]}.{fields[i]}")
 
             data_frame.columns = ticker_combined
             data_frame.index.name = 'Date'
@@ -793,7 +783,7 @@ class DataVendorDukasCopy(DataVendor):
         symbol = md_request.tickers[0]
         logger = LoggerManager.getLogger(__name__)
 
-        logger.info("About to download from Dukascopy... for " + symbol)
+        logger.info(f"About to download from Dukascopy... for {symbol}")
 
         # single threaded
         # df_list = [self.fetch_file(time, symbol) for time in
@@ -828,7 +818,7 @@ class DataVendorDukasCopy(DataVendor):
                                for try_time, ti in enumerate(time_list)]
 
                     logger.debug(
-                        "Attempting Dukascopy download " + str(i) + "... ")
+                        f"Attempting Dukascopy download {i}... ")
 
                     # Have a long timeout, because internally it'll try to download several times
                     tick_list = [p.get(
@@ -843,7 +833,7 @@ class DataVendorDukasCopy(DataVendor):
                     break
                 except:
                     logger.warning(
-                        "Didn't download on " + str(i) + " attempt... ")
+                        f"Didn't download on {i} attempt... ")
 
                 time_library.sleep(i * 5)
 
@@ -904,7 +894,7 @@ class DataVendorDukasCopy(DataVendor):
         url = constants.dukascopy_base_url + tick_path
 
         if time.hour % 24 == 0:
-            logger.info("Downloading... " + str(time) + " " + url)
+            logger.info(f"Downloading... {time} {url}")
 
         tick = self.fetch_tick(url, try_time)
 
@@ -934,7 +924,7 @@ class DataVendorDukasCopy(DataVendor):
         tick_request_content = None
 
         logger = LoggerManager.getLogger(__name__)
-        logger.debug("Loading URL " + tick_url)
+        logger.debug(f"Loading URL {tick_url}")
 
         # Sleep for a small amount of time, so multiple threads don't all poll 
         # external website at the same time
@@ -952,9 +942,7 @@ class DataVendorDukasCopy(DataVendor):
                 # If URL has not been found try again
                 if tick_request.status_code == 404:
                     logger.warning(
-                        "Error downloading.. "
-                            + tick_url + " returned 404 " +
-                            "URL not found message! Are you sure Dukascopy has this asset?")
+                        f"Error downloading.. {tick_url} returned 404 URL not found message! Are you sure Dukascopy has this asset?")
 
                     tick_request_content = None
                     tick_request.close()
@@ -962,8 +950,7 @@ class DataVendorDukasCopy(DataVendor):
                     break
                 elif tick_request.status_code == 503:
                     logger.warning(
-                        "Error downloading.. " + tick_url +
-                        " returned 503 and service unavailable")
+                        f"Error downloading.. {tick_url} returned 503 and service unavailable")
 
                     tick_request_content = None
                     tick_request.close()
@@ -982,14 +969,10 @@ class DataVendorDukasCopy(DataVendor):
                         break
                     else:
                         logger.warning(
-                            "Error downloading.. " + tick_url + " "
-                            + content_text + " will try again "
-                            + str(download_counter) + " occasion")
+                            f"Error downloading.. {tick_url} {content_text} will try again {download_counter} occasion")
             except Exception as e:
                 logger.warning(
-                    "Problem downloading.. " + tick_url + " " + str(
-                        e) + ".. will try again " + str(
-                        download_counter) + " occasion")
+                    f"Problem downloading.. {tick_url} {e}.. will try again {download_counter} occasion")
 
             download_counter = download_counter + 1
 
@@ -997,11 +980,11 @@ class DataVendorDukasCopy(DataVendor):
             time_library.sleep((try_time / 2.0))
 
         if tick_request_content is None:
-            logger.warning("Failed to download from " + tick_url)
+            logger.warning(f"Failed to download from {tick_url}")
 
             return None
 
-        logger.debug("Downloaded URL " + tick_url)
+        logger.debug(f"Downloaded URL {tick_url}")
 
         return tick_request_content
 
@@ -1194,7 +1177,7 @@ class DataVendorFXCM(DataVendor):
             ticker_combined = []
 
             for i in range(0, len(fields)):
-                ticker_combined.append(tickers[i] + "." + fields[i])
+                ticker_combined.append(f"{tickers[i]}.{fields[i]}")
 
             data_frame.columns = ticker_combined
             data_frame.index.name = 'Date'
@@ -1206,7 +1189,7 @@ class DataVendorFXCM(DataVendor):
 
         symbol = md_request.tickers[0]
 
-        logger.info("About to download from FXCM... for " + symbol)
+        logger.info(f"About to download from FXCM... for {symbol}")
 
         # single threaded
         # df_list = [self.fetch_file(week_year, symbol) for week_year in
@@ -1231,13 +1214,12 @@ class DataVendorFXCM(DataVendor):
 
     def fetch_file(self, week_year, symbol):
         logger = LoggerManager().getLogger(__name__)
-        logger.info("Downloading... " + str(week_year))
+        logger.info(f"Downloading... {week_year}")
 
         week = week_year[0]
         year = week_year[1]
 
-        tick_path = symbol + '/' + str(year) + '/' + str(
-            week) + self.url_suffix
+        tick_path = f"{symbol}/{year}/{week}{self.url_suffix}"
 
         return self.retrieve_df(constants.fxcm_base_url + tick_path)
 
@@ -1287,7 +1269,7 @@ class DataVendorFXCM(DataVendor):
                 i = i + 1
 
         if (data_frame is None):
-            logger.warning("Failed to download from " + tick_url)
+            logger.warning(f"Failed to download from {tick_url}")
 
             return None
 
@@ -1361,11 +1343,11 @@ class DataVendorFlatFile(DataVendor):
 
             read_from_disk = np.all([x not in data_source for x in file_types])
 
+            io_engine = IOEngine()
+
             if data_engine is not None and read_from_disk:
 
-                logger.info("Request " + str(
-                    md_request.data_source) + " data via " + str(
-                    data_engine))
+                logger.info(f"Request {md_request.data_source} data via {data_engine}")
 
                 # If a file path has been specified
                 if '*' in data_engine:
@@ -1378,17 +1360,9 @@ class DataVendorFlatFile(DataVendor):
                     # a separate file
                     if md_request.freq == "intraday" or \
                             md_request.freq == "tick":
-                        path = md_request.environment + "." \
-                               + md_request.category + "." + data_source + \
-                               "." + md_request.freq \
-                               + "." + md_request.cut + "." + \
-                               md_request.tickers[
-                                   0] + "." + file_format
+                        path = f"{md_request.environment}.{md_request.category}.{data_source}.{md_request.freq}.{md_request.cut}.{md_request.tickers[0]}.{file_format}"
                     else:
-                        path = md_request.environment + "." \
-                               + md_request.category + "." + data_source + \
-                               "." + md_request.freq \
-                               + "." + md_request.cut + "." + file_format
+                        path = f"{md_request.environment}.{md_request.category}.{data_source}.{md_request.freq}.{md_request.cut}.{file_format}"
 
                     full_path = os.path.join(folder, path)
                 else:
@@ -1397,16 +1371,9 @@ class DataVendorFlatFile(DataVendor):
                     # For intraday/tick files each ticker is stored in a separate file
                     if md_request.freq == "intraday" or \
                             md_request.freq == "tick":
-                        full_path = md_request.environment + "." \
-                                    + md_request.category + "." + data_source \
-                                    + "." + md_request.freq \
-                                    + "." + md_request.cut + "." + \
-                                    md_request.tickers[0]
+                        full_path = f"{md_request.environment}.{md_request.category}.{data_source}.{md_request.freq}.{md_request.cut}.{md_request.tickers[0]}"
                     else:
-                        full_path = md_request.environment + "." \
-                                    + md_request.category + "." + data_source \
-                                    + "." + md_request.freq \
-                                    + "." + md_request.cut
+                        full_path = f"{md_request.environment}.{md_request.category}.{data_source}.{md_request.freq}.{md_request.cut}"
 
             else:
                 logger.info(f"Request {data_source} data")
@@ -1446,7 +1413,7 @@ class DataVendorFlatFile(DataVendor):
                     data_frame = pd.concat(df_list)
                 except Exception as e:
                     logger.warning(
-                        "Problem fetching " + full_path + "... " + str(e))
+                        f"Problem fetching {full_path}... {e}")
 
                     data_frame = None
 
@@ -1465,16 +1432,56 @@ class DataVendorFlatFile(DataVendor):
                                                  names=col_names)
                 except Exception as e:
                     logger.warning(
-                        "Problem fetching " + full_path + "... " + str(e))
+                        f"Problem fetching {full_path}... {e}")
 
                     data_frame = None
 
             elif ".h5" in data_source:
-                data_frame = IOEngine().read_time_series_cache_from_disk(
+                data_frame = io_engine.read_time_series_cache_from_disk(
                     full_path, engine="hdf5")
-            elif ".parquet" in data_source or ".gzip" in data_source:
-                data_frame = IOEngine().read_time_series_cache_from_disk(
-                    full_path, engine="parquet")
+            elif ".parquet" in data_source or ".gzip" in data_source or ".parquet" in full_path:
+                # Only use caching for parquet files
+                speed_cache  = SpeedCache()
+
+                meta_data = io_engine.get_file_properties(full_path)
+
+                if meta_data["filesize_bytes"] < constants.cache_max_file_size_bytes and \
+                    constants.cache_flat_files:
+
+                    is_same = False
+
+                    meta_data_file = io_engine.get_file_properties(full_path)
+
+                    if speed_cache.exists_key(full_path):
+                        meta_data_cache = speed_cache.get_meta_data(full_path)
+
+                        if meta_data_cache is not None:
+                            meta_data_cache["modified_datetime"] = (
+                                datetime.strptime(meta_data_cache["modified_datetime"],
+                                                  "%Y-%m-%d %H:%M:%S %z"))
+
+                        is_same = io_engine.is_same_file(
+                            file_meta_data_1=meta_data_cache,
+                            file_meta_data_2=meta_data_file)
+
+                    if is_same:
+                        logger.info(f"Using cached version of {full_path} for faster loading")
+
+                        data_frame = speed_cache.get_dataframe(full_path)
+                    else:
+                        data_frame = io_engine.read_parquet(full_path)
+
+                        meta_data_file["modified_datetime"] = (
+                            meta_data_file["modified_datetime"]
+                            .strftime(
+                                "%Y-%m-%d %H:%M:%S %z"))  # '2026-03-20 14:30:45 +0000'
+
+                        speed_cache.put_dataframe(full_path, data_frame,
+                                                  meta_data=meta_data_file)
+
+                        logger.info(f"Caching version of {full_path} for faster loading in the future")
+                else:
+                    data_frame = io_engine.read_parquet(full_path)
             else:
                 columns = []
 
@@ -1507,7 +1514,7 @@ class DataVendorFlatFile(DataVendor):
                     if "." in tickers[i]:
                         ticker_combined.append(tickers[i])
                     else:
-                        ticker_combined.append(tickers[i] + ".close")
+                        ticker_combined.append(f"{tickers[i]}.close")
 
                 data_frame.columns = ticker_combined
                 data_frame.index.name = "Date"
@@ -1603,15 +1610,15 @@ class DataVendorAlphaVantage(DataVendor):
 
             for i in range(0, len(tickers)):
                 try:
-                    ticker_combined.append(tickers[i] + "." + fields[i])
+                    ticker_combined.append(f"{tickers[i]}.{fields[i]}")
                 except:
-                    ticker_combined.append(tickers[i] + ".close")
+                    ticker_combined.append(f"{tickers[i]}.close")
 
             data_frame.columns = ticker_combined
             data_frame.index.name = 'Date'
 
         logger.info(
-            "Completed request from Alpha Vantage for " + str(ticker_combined))
+            f"Completed request from Alpha Vantage for {ticker_combined}")
 
         return data_frame
 
@@ -1638,10 +1645,7 @@ class DataVendorAlphaVantage(DataVendor):
                 break
             except Exception as e:
                 trials = trials + 1
-                logger.info("Attempting... " + str(
-                    trials) + " request to download from Alpha Vantage due "
-                              "to following error: " + str(
-                    e))
+                logger.info(f"Attempting... {trials} request to download from Alpha Vantage due to following error: {e}")
 
         if trials == 5:
             logger.error(
@@ -1710,14 +1714,14 @@ class DataVendorFXCMPY(DataVendor):
 
             for i in range(0, len(tickers)):
                 try:
-                    ticker_combined.append(tickers[i] + "." + fields[i])
+                    ticker_combined.append(f"{tickers[i]}.{fields[i]}")
                 except:
-                    ticker_combined.append(tickers[i] + ".close")
+                    ticker_combined.append(f"{tickers[i]}.close")
 
             data_frame.columns = ticker_combined
             data_frame.index.name = 'Date'
 
-        logger.info("Completed request from FXCM for " + str(ticker_combined))
+        logger.info(f"Completed request from FXCM for {ticker_combined}")
 
         return data_frame
 
@@ -1746,10 +1750,7 @@ class DataVendorFXCMPY(DataVendor):
             except Exception as e:
                 trials = trials + 1
                 logger.info(
-                    "Attempting... " + str(
-                        trials) + " request to download from FXCM due to "
-                                  "following error: " + str(
-                        e))
+                    f"Attempting... {trials} request to download from FXCM due to following error: {e}")
 
         if trials == 5:
             logger.error("Couldn't download from FXCM after several attempts!")

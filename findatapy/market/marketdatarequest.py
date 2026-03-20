@@ -118,7 +118,7 @@ class MarketDataRequest:
                  pretransformation: str = None,
                  vintage_as_index: bool = None,
                  vintage_download: dict = None,
-                 push_to_cache: bool = True,
+                 push_to_cache: bool = None,
                  overrides: dict = {},
                  freeform_md_request: dict = {},
                  data_vendor_custom=None,
@@ -158,6 +158,8 @@ class MarketDataRequest:
             arcticdb_dict = data_constants.arcticdb_dict
         if vintage_download is None:
             vintage_download = data_constants.vintage_download
+        if push_to_cache is None:
+            push_to_cache = data_constants.push_to_cache
 
         # Can deep copy MarketDataRequest (use a lock, so can be used with 
         # threading when downloading time series)

@@ -118,6 +118,7 @@ individual data providers)
 
 # Release Notes
 
+* 0.1.42 - findatapy (20 Mar 2026)
 * 0.1.41 - findatapy (02 Jan 2026)
 * 0.1.40 - findatapy (08 Mar 2025)
 * 0.1.39 - findatapy (08 Mar 2025)
@@ -151,6 +152,8 @@ individual data providers)
 
 # Coding log
 
+* 20 Mar 2026
+  * Improved caching of Parquet files in IOEngine (and via MarketDataRequest)
 * 11 Jan 2026
   * Speeding up ticker parsing in ConfigManager
 * 02 Jan 2026
